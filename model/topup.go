@@ -30,6 +30,7 @@ const (
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodBalance      = "balance"
+	PaymentMethodAlipay       = "alipay"
 )
 
 const (
@@ -39,6 +40,7 @@ const (
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderBalance      = "balance"
+	PaymentProviderAlipay       = "alipay"
 )
 
 var (
@@ -460,6 +462,64 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 	}
 
 	RecordTopupLog(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quota, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem)
+
+	return nil
+}
+
+// RechargeAlipay 完成支付宝订单充值。
+// 换算规则：1 元人民币 = 1 余额单位 = QuotaPerUnit 配额（严格 1:1），
+// 即 quota = topUp.Money(人民币元) * QuotaPerUnit。
+func RechargeAlipay(tradeNo string, callerIp string) (err error) {
+	if tradeNo == "" {
+		return errors.New("未提供支付单号")
+	}
+
+	topUp := &TopUp{}
+	var quotaToAdd int64
+
+	refCol := "`trade_no`"
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		refCol = `"trade_no"`
+	}
+
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			return errors.New("充值订单不存在")
+		}
+
+		if topUp.PaymentProvider != PaymentProviderAlipay {
+			return ErrPaymentMethodMismatch
+		}
+
+		if topUp.Status != common.TopUpStatusPending {
+			return errors.New("充值订单状态错误")
+		}
+
+		// 1 元 = 1 余额单位 = QuotaPerUnit 配额。
+		// 使用集中式配额转换（含饱和保护），禁止裸 IntPart() 转换。
+		dMoney := decimal.NewFromFloat(topUp.Money)
+		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		quotaToAdd = int64(common.QuotaFromDecimal(dMoney.Mul(dQuotaPerUnit)))
+		if quotaToAdd <= 0 {
+			return errors.New("无效的充值额度")
+		}
+
+		topUp.CompleteTime = common.GetTimestamp()
+		topUp.Status = common.TopUpStatusSuccess
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+
+		return tx.Model(&User{}).Where("id = ?", topUp.UserId).
+			Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error
+	})
+
+	if err != nil {
+		common.SysError("alipay topup failed: " + err.Error())
+		return errors.New("充值失败，请稍后重试")
+	}
+
+	RecordTopupLog(topUp.UserId, fmt.Sprintf("使用支付宝充值成功，充值额度: %v，支付金额：%.2f 元", logger.FormatQuota(int(quotaToAdd)), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderAlipay)
 
 	return nil
 }

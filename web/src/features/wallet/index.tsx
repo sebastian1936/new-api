@@ -39,6 +39,7 @@ import {
   useAffiliate,
   useRedemption,
   useCreemPayment,
+  useAlipayPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
 } from './hooks'
@@ -105,6 +106,8 @@ export function Wallet(props: WalletProps) {
   } = useAffiliate()
   const { redeeming, redeemCode } = useRedemption()
   const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
+  const { processing: alipayProcessing, processAlipayPayment } =
+    useAlipayPayment()
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
@@ -249,6 +252,20 @@ export function Wallet(props: WalletProps) {
     }
   }
 
+  // Handle Alipay direct payment (1 CNY = 1 balance unit).
+  // Amount is taken directly from the topup input in CNY; the backend
+  // picks PC vs H5 by User-Agent, forcing PC when amount reaches threshold.
+  const handleAlipayPay = async () => {
+    const minTopup = topupInfo?.alipay_min_topup ?? getMinTopupAmount(topupInfo)
+    if (topupAmount < minTopup) {
+      return
+    }
+    const success = await processAlipayPayment(topupAmount)
+    if (success) {
+      await fetchUser()
+    }
+  }
+
   const handleWaffoMethodSelect = async (
     method: WaffoPayMethod,
     index: number
@@ -328,6 +345,10 @@ export function Wallet(props: WalletProps) {
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
+                  enableAlipayTopup={topupInfo?.enable_alipay_topup}
+                  alipayMinTopup={topupInfo?.alipay_min_topup}
+                  alipayProcessing={alipayProcessing}
+                  onAlipayPay={handleAlipayPay}
                 />
               </div>
 

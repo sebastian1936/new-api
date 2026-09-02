@@ -42,6 +42,12 @@ export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
+export type AlipayPaymentResponse = ApiResponse<{
+  pay_url: string
+  trade_no?: string
+}> & {
+  url?: string
+}
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string
 >
@@ -84,6 +90,16 @@ export interface CreemPaymentRequest {
   product_id: string
   /** Payment method identifier */
   payment_method: 'creem'
+}
+
+/**
+ * Alipay payment request parameters
+ */
+export interface AlipayPaymentRequest {
+  /** Topup amount in CNY (1 CNY = 1 balance unit) */
+  amount: number
+  /** Payment method identifier */
+  payment_method: 'alipay'
 }
 
 /**
@@ -140,6 +156,10 @@ export interface TopupInfo {
   enable_creem_topup?: boolean
   /** Available Creem products */
   creem_products?: CreemProduct[]
+  /** Whether Alipay direct topup is enabled */
+  enable_alipay_topup?: boolean
+  /** Minimum topup amount (CNY) for Alipay */
+  alipay_min_topup?: number
   /** Whether Waffo topup is enabled */
   enable_waffo_topup?: boolean
   /** Available Waffo payment methods */

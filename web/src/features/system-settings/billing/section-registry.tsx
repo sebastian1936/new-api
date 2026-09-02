@@ -153,6 +153,12 @@ const BILLING_SECTIONS = [
           CreemWebhookSecret: settings.CreemWebhookSecret,
           CreemTestMode: settings.CreemTestMode,
           CreemProducts: settings.CreemProducts,
+          AlipayAppID: settings.AlipayAppID,
+          AlipayPrivateKey: settings.AlipayPrivateKey,
+          AlipayPublicKey: settings.AlipayPublicKey,
+          AlipaySandbox: settings.AlipaySandbox,
+          AlipayMinTopUp: settings.AlipayMinTopUp,
+          AlipayForcePcAmount: settings.AlipayForcePcAmount,
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,

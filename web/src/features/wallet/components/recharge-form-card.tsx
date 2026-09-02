@@ -81,6 +81,10 @@ interface RechargeFormCardProps {
   waffoMinTopup?: number
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
+  enableAlipayTopup?: boolean
+  alipayMinTopup?: number
+  alipayProcessing?: boolean
+  onAlipayPay?: () => void
 }
 
 export function RechargeFormCard({
@@ -111,6 +115,10 @@ export function RechargeFormCard({
   waffoMinTopup,
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
+  enableAlipayTopup,
+  alipayMinTopup,
+  alipayProcessing,
+  onAlipayPay,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -135,7 +143,8 @@ export function RechargeFormCard({
     topupInfo?.enable_stripe_topup ||
     enableWaffoTopup ||
     enableWaffoPancakeTopup
-  const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
+  const hasAnyTopup =
+    hasConfigurableTopup || enableCreemTopup || enableAlipayTopup
   const hasStandardPaymentMethods =
     Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
   const hasWaffoPaymentMethods =
@@ -502,6 +511,44 @@ export function RechargeFormCard({
             />
           </div>
         )}
+
+      {/* Alipay Direct Payment Section (1 CNY = 1 balance unit) */}
+      {enableAlipayTopup && onAlipayPay && (
+        <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
+          <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
+            {t('Alipay')}
+          </Label>
+          <p className='text-muted-foreground text-xs'>
+            {t('1 CNY = 1 balance unit. You will be charged in CNY.')}
+          </p>
+          <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+            <Input
+              id='alipay-amount'
+              type='number'
+              value={localAmount}
+              onChange={(e) => handleAmountChange(e.target.value)}
+              min={Math.max(alipayMinTopup || 0, 1)}
+              placeholder={`${t('Amount (CNY)')}`}
+              className='h-9 text-base sm:h-10'
+            />
+            <Button
+              onClick={onAlipayPay}
+              disabled={
+                !!alipayProcessing ||
+                topupAmount < Math.max(alipayMinTopup || 0, 1)
+              }
+              className='h-9 gap-2 px-4'
+            >
+              {alipayProcessing ? (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              ) : (
+                getPaymentIcon('alipay', 'h-4 w-4')
+              )}
+              {t('Pay {{amount}} CNY', { amount: topupAmount })}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Redemption Code Section */}
       {redemptionEnabled ? (
