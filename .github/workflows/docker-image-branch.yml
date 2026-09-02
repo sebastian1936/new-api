@@ -11,6 +11,9 @@ on:
         required: false
         type: string
 
+env:
+  IMAGE: ccr.ccs.tencentyun.com/sebastian/new-api
+
 jobs:
   build_and_push:
     name: Build & push (amd64) to Tencent CCR
@@ -66,8 +69,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ vars.CCR_IMAGE }}:${{ steps.version.outputs.tag_prefix }}
-            ${{ vars.CCR_IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE }}:${{ steps.version.outputs.tag_prefix }}
+            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,6 +78,6 @@ jobs:
         run: |
           echo "### Tencent CCR Image" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ vars.CCR_IMAGE }}:${{ steps.version.outputs.tag_prefix }}" >> $GITHUB_STEP_SUMMARY
-          echo "${{ vars.CCR_IMAGE }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.IMAGE }}:${{ steps.version.outputs.tag_prefix }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.IMAGE }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
