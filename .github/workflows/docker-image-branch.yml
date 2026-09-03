@@ -27,30 +27,26 @@ jobs:
           fetch-depth: 1
           ref: ${{ inputs.branch || github.ref }}
 
-      - name: Resolve Docker tags
+      - name: Resolve Docker tag
         id: version
         env:
           BRANCH_NAME: ${{ inputs.branch || github.ref_name }}
         run: |
           TAG_PREFIX=$(printf '%s' "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//')
-          TAG_PREFIX=${TAG_PREFIX:0:105}
+          TAG_PREFIX=${TAG_PREFIX:0:128}
           TAG_PREFIX=$(printf '%s' "$TAG_PREFIX" | sed -E 's/[.-]+$//')
           if [ -z "$TAG_PREFIX" ]; then
-            echo "::error::Branch '$BRANCH_NAME' cannot be converted to a valid Docker tag prefix"
+            echo "::error::Branch '$BRANCH_NAME' cannot be converted to a valid Docker tag"
             exit 1
           fi
 
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION="${TAG_PREFIX}-$(date +'%Y%m%d')-${SHORT_SHA}"
-
           echo "tag_prefix=$TAG_PREFIX" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Prepared Docker tags for $BRANCH_NAME at $SHORT_SHA"
+          echo "Prepared Docker tag '$TAG_PREFIX' for branch $BRANCH_NAME"
 
       - name: Write VERSION
         run: |
-          echo "${{ steps.version.outputs.version }}" > VERSION
-          echo "Publishing version: ${{ steps.version.outputs.version }}"
+          echo "${{ steps.version.outputs.tag_prefix }}" > VERSION
+          echo "Publishing version: ${{ steps.version.outputs.tag_prefix }}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -70,7 +66,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ steps.version.outputs.tag_prefix }}
-            ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -79,5 +74,4 @@ jobs:
           echo "### Tencent CCR Image" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "${{ env.IMAGE }}:${{ steps.version.outputs.tag_prefix }}" >> $GITHUB_STEP_SUMMARY
-          echo "${{ env.IMAGE }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
