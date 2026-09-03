@@ -108,7 +108,7 @@ func RequestAlipayPay(c *gin.Context) {
 
 	callBackAddress := service.GetCallbackAddress()
 	notifyUrl := callBackAddress + "/api/user/alipay/notify"
-	returnUrl := paymentReturnPath("/usage-logs")
+	returnUrl := paymentReturnPath("/wallet")
 
 	// Amount 字段与 Money 字段都存人民币金额，充值到账时按 Money * QuotaPerUnit 计算。
 	topUp := &model.TopUp{

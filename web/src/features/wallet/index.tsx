@@ -25,6 +25,7 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
+import { AlipayConfirmDialog } from './components/dialogs/alipay-confirm-dialog'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
@@ -79,6 +80,7 @@ export function Wallet(props: WalletProps) {
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
+  const [alipayConfirmOpen, setAlipayConfirmOpen] = useState(false)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
 
   const { status } = useStatus()
@@ -255,6 +257,8 @@ export function Wallet(props: WalletProps) {
   // Handle Alipay direct payment (1 CNY = 1 balance unit).
   // Amount is taken directly from the topup input in CNY; the backend
   // picks PC vs H5 by User-Agent, forcing PC when amount reaches threshold.
+  // The cashier opens in a new tab (see use-alipay-payment); on this original
+  // page we then prompt the user to confirm completion and refresh balance.
   const handleAlipayPay = async () => {
     const minTopup = topupInfo?.alipay_min_topup ?? getMinTopupAmount(topupInfo)
     if (topupAmount < minTopup) {
@@ -262,8 +266,16 @@ export function Wallet(props: WalletProps) {
     }
     const success = await processAlipayPayment(topupAmount)
     if (success) {
-      await fetchUser()
+      setAlipayConfirmOpen(true)
     }
+  }
+
+  // User confirmed payment completion on the original page: refresh balance.
+  // The balance itself is credited by the async notify webhook, so this only
+  // re-fetches the latest user data.
+  const handleAlipayConfirm = async () => {
+    await fetchUser()
+    setAlipayConfirmOpen(false)
   }
 
   const handleWaffoMethodSelect = async (
@@ -405,6 +417,13 @@ export function Wallet(props: WalletProps) {
         onConfirm={handleCreemConfirm}
         product={selectedCreemProduct}
         processing={creemProcessing}
+      />
+
+      <AlipayConfirmDialog
+        open={alipayConfirmOpen}
+        onOpenChange={setAlipayConfirmOpen}
+        onConfirm={handleAlipayConfirm}
+        refreshing={userLoading}
       />
     </>
   )

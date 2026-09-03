@@ -46,7 +46,9 @@ export function useAlipayPayment() {
       const payUrl = response.data?.pay_url || response.url
       if (isApiSuccess(response) && payUrl) {
         toast.success(i18next.t('Redirecting to Alipay...'))
-        window.location.href = payUrl
+        // Open the Alipay cashier in a new tab so the original wallet page
+        // stays open and can prompt the user to confirm payment afterwards.
+        window.open(payUrl, '_blank', 'noopener,noreferrer')
         return true
       }
 
