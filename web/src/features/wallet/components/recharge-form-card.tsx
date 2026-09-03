@@ -16,9 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
+import { Gift, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -515,12 +516,14 @@ export function RechargeFormCard({
       {/* Alipay Direct Payment Section (1 CNY = 1 balance unit) */}
       {enableAlipayTopup && onAlipayPay && (
         <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
-          <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-            {t('Alipay')}
-          </Label>
-          <p className='text-muted-foreground text-xs'>
-            {t('1 CNY = 1 balance unit. You will be charged in CNY.')}
-          </p>
+          <div className='flex items-center gap-2'>
+            <IconBadge tone='info' size='sm'>
+              {getPaymentIcon('alipay', 'h-4 w-4')}
+            </IconBadge>
+            <Label className='text-foreground text-base font-bold tracking-wide'>
+              {t('Alipay')}
+            </Label>
+          </div>
           <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
             <Input
               id='alipay-amount'
@@ -582,20 +585,18 @@ export function RechargeFormCard({
               {t('Redeem')}
             </Button>
           </div>
-          {topupLink && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Need a redemption code?')}{' '}
-              <a
-                href={topupLink}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='inline-flex items-center gap-1 underline-offset-4 hover:underline'
-              >
-                {t('Get one here')}
-                <ExternalLink className='h-3 w-3' />
-              </a>
-            </p>
-          )}
+          <p className='text-muted-foreground text-xs'>
+            {t('Need a redemption code?')}{' '}
+            <button
+              type='button'
+              onClick={() =>
+                toast.info(t('Please top up your balance directly via Alipay.'))
+              }
+              className='inline-flex items-center gap-1 underline-offset-4 hover:underline'
+            >
+              {t('Get one here')}
+            </button>
+          </p>
         </div>
       ) : (
         <Alert className='border-t'>
