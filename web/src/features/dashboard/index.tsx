@@ -113,6 +113,12 @@ const LazyFlowCharts = lazy(() =>
   }))
 )
 
+const LazyReconciliationTable = lazy(() =>
+  import('./components/reconciliation/reconciliation-table').then((m) => ({
+    default: m.ReconciliationTable,
+  }))
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -186,6 +192,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   flow: {
     titleKey: 'Flow',
   },
+  reconciliation: {
+    titleKey: 'Reconciliation',
+  },
   users: {
     titleKey: 'User Analytics',
   },
@@ -248,7 +257,9 @@ export function Dashboard() {
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          ((section !== 'users' && section !== 'reconciliation') || isAdmin)
       ),
     [isAdmin]
   )
@@ -315,7 +326,18 @@ export function Dashboard() {
         />
       </>
     ) : null
-  const sectionActions = modelActions ?? flowActions
+  const reconciliationActions =
+    activeSection === 'reconciliation' ? (
+      <ModelsFilter
+        preferences={chartPreferences}
+        currentFilters={modelFilters}
+        onFilterChange={handleFilterChange}
+        onReset={handleResetFilters}
+        titleKey='Reconciliation Filters'
+        descriptionKey='Filter the reconciliation report by time range and user.'
+      />
+    ) : null
+  const sectionActions = modelActions ?? flowActions ?? reconciliationActions
 
   return (
     <SectionPageLayout>
@@ -407,6 +429,13 @@ export function Dashboard() {
                   filters={modelFilters}
                   sensitiveVisible={flowSensitiveVisible}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'reconciliation' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyReconciliationTable filters={modelFilters} />
               </Suspense>
             </FadeIn>
           )}
