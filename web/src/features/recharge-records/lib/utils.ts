@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { parseLogOther } from '@/features/usage-logs/lib/format'
 import type { LogOtherData } from '@/features/usage-logs/types'
 
-import { REDEMPTION_CONTENT_KEYWORD } from './constants'
-import type { RechargeRecord, RechargeSource } from './types'
+import { REDEMPTION_CONTENT_KEYWORD } from '../constants'
+import type { RechargeRecord, RechargeSource } from '../types'
 
 /**
  * Resolve the coarse-grained recharge source (bucket) of a single record.
