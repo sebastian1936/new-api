@@ -32,8 +32,8 @@ const (
 	// captchaRedisKeyPrefix Redis 键前缀。
 	captchaRedisKeyPrefix = "captcha:"
 	// captchaImageWidth / captchaImageHeight 图片尺寸。
-	captchaImageWidth  = 120
-	captchaImageHeight = 44
+	captchaImageWidth  = 140
+	captchaImageHeight = 48
 	// captchaMemoryMaxSize 内存兜底存储的最大条目数，防止未启用 Redis 时无界增长。
 	captchaMemoryMaxSize = 5000
 )
@@ -205,7 +205,7 @@ func renderCaptchaImage(code string) (string, error) {
 
 // drawCaptchaNoise 绘制随机噪点。
 func drawCaptchaNoise(img *image.RGBA) error {
-	const noiseCount = 260
+	const noiseCount = 140
 	for i := 0; i < noiseCount; i++ {
 		x, err := randomInt(captchaImageWidth)
 		if err != nil {
@@ -223,15 +223,16 @@ func drawCaptchaNoise(img *image.RGBA) error {
 			R: uint8(shade),
 			G: uint8(shade),
 			B: uint8(shade),
-			A: 190,
+			A: 120,
 		})
 	}
 	return nil
 }
 
 // drawCaptchaLines 绘制贯穿的干扰线，破坏字符切割。
+// 线条保持细(1px)、半透明，且数量较少，避免遮挡数字影响人眼识别。
 func drawCaptchaLines(img *image.RGBA) error {
-	const lineCount = 5
+	const lineCount = 2
 	for i := 0; i < lineCount; i++ {
 		startY, err := randomInt(captchaImageHeight)
 		if err != nil {
@@ -241,47 +242,52 @@ func drawCaptchaLines(img *image.RGBA) error {
 		if err != nil {
 			return err
 		}
-		r, err := randomInt(160)
+		r, err := randomInt(190)
 		if err != nil {
 			return err
 		}
-		g, err := randomInt(160)
+		g, err := randomInt(190)
 		if err != nil {
 			return err
 		}
-		b, err := randomInt(160)
+		b, err := randomInt(190)
 		if err != nil {
 			return err
 		}
-		lineColor := color.RGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 170}
+		lineColor := color.RGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 110}
 		// 按 x 线性插值，画出一条从左到右的斜线。
 		for x := 0; x < captchaImageWidth; x++ {
 			y := startY + (endY-startY)*x/captchaImageWidth
 			img.Set(x, y, lineColor)
-			if y+1 < captchaImageHeight {
-				img.Set(x, y+1, lineColor)
-			}
 		}
 	}
 	return nil
 }
 
+// captchaGlyphScale 字符放大倍数。basicfont 是 7x13 位图字体，直接绘制在
+// 140x48 的画布上偏小，这里先渲染再整数倍放大，兼顾清晰度与无字体文件依赖。
+const captchaGlyphScale = 3
+
 // drawCaptchaText 逐字符绘制验证码，带随机位置抖动与颜色变化。
+// 每个字符先渲染到独立小图，再按 captchaGlyphScale 放大贴入主图，
+// 使数字足够大、笔画连续，便于人眼识别。
 func drawCaptchaText(img *image.RGBA, code string) error {
 	face := basicfont.Face7x13
+	const glyphW, glyphH = 7, 13
 	// 基于图片宽度均分每个字符的水平空间。
-	slotWidth := captchaImageWidth / (len(code) + 1)
+	slotWidth := captchaImageWidth / len(code)
+	scaledH := glyphH * captchaGlyphScale
 
 	for i, ch := range code {
-		r, err := randomInt(90)
+		r, err := randomInt(80)
 		if err != nil {
 			return err
 		}
-		g, err := randomInt(90)
+		g, err := randomInt(80)
 		if err != nil {
 			return err
 		}
-		b, err := randomInt(90)
+		b, err := randomInt(80)
 		if err != nil {
 			return err
 		}
@@ -289,24 +295,43 @@ func drawCaptchaText(img *image.RGBA, code string) error {
 		if err != nil {
 			return err
 		}
-		jitterY, err := randomInt(9)
+		jitterY, err := randomInt(7)
 		if err != nil {
 			return err
 		}
 
+		// 单字符渲染到小图，基线设在底部上方 2px 以容纳字形下延部分。
+		glyph := image.NewRGBA(image.Rect(0, 0, glyphW, glyphH))
 		drawer := &font.Drawer{
-			Dst:  img,
+			Dst:  glyph,
 			Src:  image.NewUniform(color.RGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 255}),
 			Face: face,
 		}
-		x := slotWidth*i + slotWidth/2 + jitterX - 3
-		y := captchaImageHeight/2 + 5 + jitterY - 4
-		drawer.Dot = fixed.P(x, y)
+		drawer.Dot = fixed.P(0, glyphH-2)
 		drawer.DrawString(string(ch))
 
-		// 位图字体较细，向右偏移 1px 重绘一次加粗，提升人眼可读性。
-		drawer.Dot = fixed.P(x+1, y)
-		drawer.DrawString(string(ch))
+		// 放大贴图：把每个源像素铺成 scale x scale 的方块。
+		offsetX := slotWidth*i + jitterX + 2
+		offsetY := (captchaImageHeight-scaledH)/2 + jitterY - 3
+		for gy := 0; gy < glyphH; gy++ {
+			for gx := 0; gx < glyphW; gx++ {
+				_, _, _, alpha := glyph.At(gx, gy).RGBA()
+				if alpha == 0 {
+					continue
+				}
+				srcColor := glyph.At(gx, gy)
+				for dy := 0; dy < captchaGlyphScale; dy++ {
+					for dx := 0; dx < captchaGlyphScale; dx++ {
+						px := offsetX + gx*captchaGlyphScale + dx
+						py := offsetY + gy*captchaGlyphScale + dy
+						if px < 0 || px >= captchaImageWidth || py < 0 || py >= captchaImageHeight {
+							continue
+						}
+						img.Set(px, py, srcColor)
+					}
+				}
+			}
+		}
 	}
 	return nil
 }
