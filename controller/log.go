@@ -33,6 +33,36 @@ func GetAllLogs(c *gin.Context) {
 	return
 }
 
+// allowedRechargeSources 限定 source 查询参数的合法取值，防止透传任意值。
+var allowedRechargeSources = map[string]model.RechargeSource{
+	"":           model.RechargeSourceAll,
+	"redemption": model.RechargeSourceRedemption,
+	"online":     model.RechargeSourceOnline,
+	"manage":     model.RechargeSourceManage,
+}
+
+// GetRechargeRecords 管理员查看用户余额变动记录（兑换码 / 在线支付 / 管理员调整），
+// 支持按来源(source)、用户名(username)、时间范围筛选与分页。仅 AdminAuth 可访问。
+func GetRechargeRecords(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	source, ok := allowedRechargeSources[c.Query("source")]
+	if !ok {
+		source = model.RechargeSourceAll
+	}
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	username := c.Query("username")
+	logs, total, err := model.GetRechargeRecords(source, username, startTimestamp, endTimestamp, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(logs)
+	common.ApiSuccess(c, pageInfo)
+	return
+}
+
 func GetUserLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	userId := c.GetInt("id")

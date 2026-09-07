@@ -465,6 +465,79 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
+// RechargeSource 充值/额度变动记录的来源筛选值。
+type RechargeSource string
+
+const (
+	// RechargeSourceAll 全部三种来源。
+	RechargeSourceAll RechargeSource = ""
+	// RechargeSourceRedemption 兑换码兑换（type=1 且 content 含“兑换码”）。
+	RechargeSourceRedemption RechargeSource = "redemption"
+	// RechargeSourceOnline 在线支付充值（type=1 且 content 不含“兑换码”）。
+	RechargeSourceOnline RechargeSource = "online"
+	// RechargeSourceManage 管理员手动调整额度（type=3 的额度审计日志）。
+	RechargeSourceManage RechargeSource = "manage"
+)
+
+// redemptionContentKeyword 兑换码充值日志 content 中的稳定关键字。
+// 由 model.Redeem 写入（"通过兑换码充值 ..."），用于把 type=1 的充值日志
+// 区分为“兑换码”与“在线支付”两类。在线支付日志（RecordTopupLog）不含该词。
+const redemptionContentKeyword = "兑换码"
+
+// applyRechargeSourceFilter 依据来源在充值/额度变动查询上追加筛选条件。
+// - all：type IN (1,3)，即充值 + 管理员调整。
+// - redemption：type=1 且 content 含“兑换码”。
+// - online：type=1 且 content 不含“兑换码”。
+// - manage：type=3。
+// content 的 LIKE 关键字为固定常量（非用户输入），跨 SQLite/MySQL/PostgreSQL 通用。
+func applyRechargeSourceFilter(tx *gorm.DB, source RechargeSource) *gorm.DB {
+	likeKeyword := "%" + redemptionContentKeyword + "%"
+	switch source {
+	case RechargeSourceRedemption:
+		return tx.Where("logs.type = ? AND logs.content LIKE ?", LogTypeTopup, likeKeyword)
+	case RechargeSourceOnline:
+		return tx.Where("logs.type = ? AND logs.content NOT LIKE ?", LogTypeTopup, likeKeyword)
+	case RechargeSourceManage:
+		return tx.Where("logs.type = ?", LogTypeManage)
+	default:
+		return tx.Where("logs.type IN ?", []int{LogTypeTopup, LogTypeManage})
+	}
+}
+
+// GetRechargeRecords 查询用户余额变动记录（管理员视角），涵盖三种来源：
+// 兑换码充值、在线支付充值、管理员手动调整额度。支持按来源、用户名、时间范围筛选与分页。
+// 复用 logs 表，不新建表；管理员视角返回完整 Other（含 admin_info / op 审计信息）。
+func GetRechargeRecords(source RechargeSource, username string, startTimestamp int64, endTimestamp int64, startIdx int, num int) (logs []*Log, total int64, err error) {
+	tx := applyRechargeSourceFilter(LOG_DB, source)
+
+	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", username); err != nil {
+		return nil, 0, err
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("logs.created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("logs.created_at <= ?", endTimestamp)
+	}
+
+	err = tx.Model(&Log{}).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	order := "logs.created_at desc, logs.id desc"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = clickHouseLogOrder("logs.")
+	}
+	err = tx.Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		assignDisplayLogIds(logs, startIdx)
+	}
+	return logs, total, err
+}
+
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
