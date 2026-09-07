@@ -475,7 +475,7 @@ const (
 	RechargeSourceRedemption RechargeSource = "redemption"
 	// RechargeSourceOnline 在线支付充值（type=1 且 content 不含“兑换码”）。
 	RechargeSourceOnline RechargeSource = "online"
-	// RechargeSourceManage 管理员手动调整额度（type=3 的额度审计日志）。
+	// RechargeSourceManage 管理员手动调整额度（type=3 且 op.action 为额度调整）。
 	RechargeSourceManage RechargeSource = "manage"
 )
 
@@ -484,11 +484,50 @@ const (
 // 区分为“兑换码”与“在线支付”两类。在线支付日志（RecordTopupLog）不含该词。
 const redemptionContentKeyword = "兑换码"
 
+// quotaAdjustOpActions 管理员手动调整用户额度的操作标识（写入 Other.op.action）。
+// type=LogTypeManage 还包含大量与余额无关的管理审计（改系统设置、删用户、建渠道等），
+// 充值记录只应展示这三种真正改变用户余额的调整。
+var quotaAdjustOpActions = []string{
+	"user.quota_add",
+	"user.quota_subtract",
+	"user.quota_override",
+}
+
+// quotaAdjustOtherPatterns 依据 Other JSON 中的 op.action 匹配额度调整日志。
+// Other 由 common.MapToJsonStr 使用标准 json.Marshal 生成（紧凑、无空格），
+// 因此 `"action":"user.quota_add"` 是稳定可匹配的字面量。
+// 这些模式为固定常量（非用户输入），跨 SQLite/MySQL/PostgreSQL 通用。
+func quotaAdjustOtherPatterns() []string {
+	patterns := make([]string, 0, len(quotaAdjustOpActions))
+	for _, action := range quotaAdjustOpActions {
+		patterns = append(patterns, `%"action":"`+action+`"%`)
+	}
+	return patterns
+}
+
+// applyQuotaAdjustFilter 限定为管理员额度调整日志：type=3 且 op.action 属于
+// quotaAdjustOpActions 之一。多个 action 用 OR 组合，并整体括起来，避免与
+// 外层的 AND 条件（用户名、时间范围）产生优先级错误。
+func applyQuotaAdjustFilter(tx *gorm.DB) *gorm.DB {
+	patterns := quotaAdjustOtherPatterns()
+	conditions := make([]string, 0, len(patterns))
+	args := make([]interface{}, 0, len(patterns)+1)
+	args = append(args, LogTypeManage)
+	for _, pattern := range patterns {
+		conditions = append(conditions, "logs.other LIKE ?")
+		args = append(args, pattern)
+	}
+	return tx.Where(
+		"logs.type = ? AND ("+strings.Join(conditions, " OR ")+")",
+		args...,
+	)
+}
+
 // applyRechargeSourceFilter 依据来源在充值/额度变动查询上追加筛选条件。
-// - all：type IN (1,3)，即充值 + 管理员调整。
+// - all：充值(type=1) 或 管理员额度调整(type=3 且 op.action 为额度调整)。
 // - redemption：type=1 且 content 含“兑换码”。
 // - online：type=1 且 content 不含“兑换码”。
-// - manage：type=3。
+// - manage：type=3 且 op.action 为额度调整（排除其他管理审计日志）。
 // content 的 LIKE 关键字为固定常量（非用户输入），跨 SQLite/MySQL/PostgreSQL 通用。
 func applyRechargeSourceFilter(tx *gorm.DB, source RechargeSource) *gorm.DB {
 	likeKeyword := "%" + redemptionContentKeyword + "%"
@@ -498,9 +537,20 @@ func applyRechargeSourceFilter(tx *gorm.DB, source RechargeSource) *gorm.DB {
 	case RechargeSourceOnline:
 		return tx.Where("logs.type = ? AND logs.content NOT LIKE ?", LogTypeTopup, likeKeyword)
 	case RechargeSourceManage:
-		return tx.Where("logs.type = ?", LogTypeManage)
+		return applyQuotaAdjustFilter(tx)
 	default:
-		return tx.Where("logs.type IN ?", []int{LogTypeTopup, LogTypeManage})
+		patterns := quotaAdjustOtherPatterns()
+		conditions := make([]string, 0, len(patterns))
+		args := make([]interface{}, 0, len(patterns)+2)
+		args = append(args, LogTypeTopup, LogTypeManage)
+		for _, pattern := range patterns {
+			conditions = append(conditions, "logs.other LIKE ?")
+			args = append(args, pattern)
+		}
+		return tx.Where(
+			"logs.type = ? OR (logs.type = ? AND ("+strings.Join(conditions, " OR ")+"))",
+			args...,
+		)
 	}
 }
 

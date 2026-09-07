@@ -27,6 +27,7 @@ import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 import { RECHARGE_SOURCE_BADGE } from '../constants'
 import {
   getPaymentMethodLabel,
+  getQuotaAdjustAmount,
   parseRechargeOther,
   resolveRechargeSource,
 } from '../lib/utils'
@@ -93,16 +94,31 @@ export function useRechargeRecordsColumns(): ColumnDef<RechargeRecord>[] {
       accessorKey: 'quota',
       header: t('Amount'),
       cell: ({ row }) => {
+        const record = row.original
         const quota = row.getValue('quota') as number
-        // Admin adjustments may not carry a quota delta on the log row; only
-        // top-up records store the credited amount in `quota`.
-        if (!quota) {
+        // Top-up records store the credited amount in `quota`. Admin
+        // adjustments are audit logs whose `quota` stays 0, so the real delta
+        // is read from other.op.params (already currency-formatted upstream).
+        if (quota) {
+          return (
+            <StatusBadge
+              label={formatLogQuota(quota)}
+              variant='neutral'
+              copyable={false}
+              className='-ml-1.5'
+            />
+          )
+        }
+        const adjustAmount = getQuotaAdjustAmount(
+          parseRechargeOther(record.other)
+        )
+        if (!adjustAmount) {
           return <span className='text-muted-foreground text-sm'>-</span>
         }
         return (
           <StatusBadge
-            label={formatLogQuota(quota)}
-            variant='neutral'
+            label={adjustAmount}
+            variant={adjustAmount.startsWith('-') ? 'red' : 'neutral'}
             copyable={false}
             className='-ml-1.5'
           />

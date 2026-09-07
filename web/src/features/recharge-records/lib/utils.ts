@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { LOG_TYPE_ENUM } from '@/features/usage-logs/constants'
 import { parseLogOther } from '@/features/usage-logs/lib/format'
 import type { LogOtherData } from '@/features/usage-logs/types'
 
@@ -24,15 +25,17 @@ import type { RechargeRecord, RechargeSource } from '../types'
 
 /**
  * Resolve the coarse-grained recharge source (bucket) of a single record.
- * Mirrors the backend classification so display and filtering stay consistent:
- * - type=3 (manage)        -> 'manage'
- * - type=1 + content 兑换码 -> 'redemption'
- * - type=1 (otherwise)     -> 'online'
+ * Mirrors the backend classification so display and filtering stay consistent.
+ * The backend only returns MANAGE records that are real quota adjustments, so
+ * the log type alone is enough to bucket them here:
+ * - type=MANAGE            -> 'manage'
+ * - type=TOPUP + 兑换码     -> 'redemption'
+ * - type=TOPUP (otherwise) -> 'online'
  */
 export function resolveRechargeSource(
   record: RechargeRecord
 ): Exclude<RechargeSource, ''> {
-  if (record.type === 3) return 'manage'
+  if (record.type === LOG_TYPE_ENUM.MANAGE) return 'manage'
   if (record.content?.includes(REDEMPTION_CONTENT_KEYWORD)) return 'redemption'
   return 'online'
 }
@@ -69,4 +72,48 @@ export function getPaymentMethodLabel(
  */
 export function parseRechargeOther(other: string): LogOtherData | null {
   return parseLogOther(other)
+}
+
+/**
+ * Op actions that represent an admin manually changing a user's quota.
+ * Mirrors `quotaAdjustOpActions` in the backend (model/log.go).
+ */
+const QUOTA_ADJUST_ACTIONS = [
+  'user.quota_add',
+  'user.quota_subtract',
+  'user.quota_override',
+] as const
+
+/**
+ * Resolve the displayable amount of an admin quota adjustment.
+ *
+ * Admin adjustments are audit logs: the log row's `quota` column stays 0 and
+ * the real delta lives in `other.op.params`, already formatted by the backend
+ * (logger.LogQuota) in the site's configured currency. Add/subtract carry a
+ * single `quota` param and are signed for display; override carries
+ * `from`/`to` and is rendered as a transition.
+ *
+ * Returns null when the record is not a quota adjustment or lacks params.
+ */
+export function getQuotaAdjustAmount(
+  other: LogOtherData | null
+): string | null {
+  const action = other?.op?.action
+  if (!action) return null
+  if (!(QUOTA_ADJUST_ACTIONS as readonly string[]).includes(action)) return null
+
+  const params = other?.op?.params
+  if (!params) return null
+
+  if (action === 'user.quota_override') {
+    const from = params.from
+    const to = params.to
+    if (from == null || to == null) return null
+    return `${String(from)} → ${String(to)}`
+  }
+
+  const quota = params.quota
+  if (quota == null) return null
+  const sign = action === 'user.quota_subtract' ? '-' : '+'
+  return `${sign}${String(quota)}`
 }
