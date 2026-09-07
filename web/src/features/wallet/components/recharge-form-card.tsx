@@ -151,6 +151,7 @@ export function RechargeFormCard({
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
+  const alipayMinTopupAmount = Math.max(alipayMinTopup || 0, 1)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
 
   if (loading) {
@@ -513,7 +514,8 @@ export function RechargeFormCard({
           </div>
         )}
 
-      {/* Alipay Direct Payment Section (1 CNY = 1 balance unit) */}
+      {/* Alipay Direct Payment Section. Amount is the number of balance units;
+          the CNY charge comes from the shared unit price (Price setting). */}
       {enableAlipayTopup && onAlipayPay && (
         <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
           <div className='flex items-center gap-2'>
@@ -530,15 +532,16 @@ export function RechargeFormCard({
               type='number'
               value={localAmount}
               onChange={(e) => handleAmountChange(e.target.value)}
-              min={Math.max(alipayMinTopup || 0, 1)}
-              placeholder={`${t('Amount (CNY)')}`}
+              min={alipayMinTopupAmount}
+              placeholder={`Minimum ${alipayMinTopupAmount}`}
               className='h-9 text-base sm:h-10'
             />
             <Button
               onClick={onAlipayPay}
               disabled={
                 !!alipayProcessing ||
-                topupAmount < Math.max(alipayMinTopup || 0, 1)
+                !!calculating ||
+                topupAmount < alipayMinTopupAmount
               }
               className='h-9 gap-2 px-4'
             >
@@ -547,7 +550,11 @@ export function RechargeFormCard({
               ) : (
                 getPaymentIcon('alipay', 'h-4 w-4')
               )}
-              {t('Pay {{amount}} CNY', { amount: topupAmount })}
+              {paymentAmount > 0
+                ? t('Pay {{amount}} CNY', {
+                    amount: formatCurrency(paymentAmount),
+                  })
+                : t('Pay')}
             </Button>
           </div>
         </div>

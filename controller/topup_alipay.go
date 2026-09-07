@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,10 +20,10 @@ import (
 )
 
 // AlipayPayRequest 前端发起支付宝充值的请求体。
-// Amount 单位为人民币元，1 元 = 1 余额单位。
+// Amount 为充值数量（余额单位，仅支持整数），实付人民币金额由定价配置换算得出。
 type AlipayPayRequest struct {
-	Amount        float64 `json:"amount"`
-	PaymentMethod string  `json:"payment_method"`
+	Amount        int64  `json:"amount"`
+	PaymentMethod string `json:"payment_method"`
 }
 
 // getAlipayClient 依据当前配置构造支付宝客户端；配置缺失或非法返回 nil。
@@ -79,30 +80,42 @@ func RequestAlipayPay(c *gin.Context) {
 		return
 	}
 
-	// 金额校验：正数、最低充值、上限（防止溢出与异常大额）。
+	// 充值数量校验：正整数、最低充值数量、配额上限（防止溢出与异常大额）。
 	if req.Amount <= 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额必须大于 0"})
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值数量必须大于 0"})
 		return
 	}
-	if req.Amount < float64(setting.AlipayMinTopUp) {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值金额不能小于 %d 元", setting.AlipayMinTopUp)})
+	if req.Amount < int64(setting.AlipayMinTopUp) {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", setting.AlipayMinTopUp)})
 		return
 	}
-	if req.Amount > alipayMaxTopUp {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值金额不能大于 %.0f 元", alipayMaxTopUp)})
+	// 配额列为 32 位整数，充值数量必须保证换算后的配额不溢出。
+	dQuota := decimal.NewFromInt(req.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+	if dQuota.Cmp(decimal.NewFromInt(int64(math.MaxInt32))) > 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值数量过大"})
 		return
 	}
 
-	// 金额规整为两位小数（支付宝要求），并作为实付人民币金额。
-	dMoney := decimal.NewFromFloat(req.Amount).Round(2)
+	id := c.GetInt("id")
+	group, err := model.GetUserGroup(id, true)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
+		return
+	}
+
+	// 实付人民币金额与易支付共用同一套定价：充值数量 × 单位价格 × 分组倍率 × 折扣。
+	// 支付宝要求金额为两位小数。
+	dMoney := decimal.NewFromFloat(getPayMoney(req.Amount, group)).Round(2)
 	payMoney := dMoney.InexactFloat64()
 	if payMoney < 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
 	}
+	if payMoney > alipayMaxTopUp {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("支付金额不能大于 %.0f 元", alipayMaxTopUp)})
+		return
+	}
 	totalAmount := dMoney.StringFixed(2)
-
-	id := c.GetInt("id")
 
 	tradeNo := fmt.Sprintf("ALIUSR%dNO%s%d", id, common.GetRandomString(6), time.Now().Unix())
 
@@ -110,10 +123,11 @@ func RequestAlipayPay(c *gin.Context) {
 	notifyUrl := callBackAddress + "/api/user/alipay/notify"
 	returnUrl := paymentReturnPath("/wallet")
 
-	// Amount 字段与 Money 字段都存人民币金额，充值到账时按 Money * QuotaPerUnit 计算。
+	// Amount 存充值数量（余额单位），Money 存实付人民币金额；
+	// 充值到账时按 Amount * QuotaPerUnit 计算配额，Money 仅用于回调金额校验与账单展示。
 	topUp := &model.TopUp{
 		UserId:          id,
-		Amount:          int64(dMoney.IntPart()),
+		Amount:          req.Amount,
 		Money:           payMoney,
 		TradeNo:         tradeNo,
 		PaymentMethod:   model.PaymentMethodAlipay,
@@ -122,7 +136,7 @@ func RequestAlipayPay(c *gin.Context) {
 		Status:          common.TopUpStatusPending,
 	}
 	if err := topUp.Insert(); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("支付宝 创建充值订单失败 user_id=%d trade_no=%s amount=%.2f error=%q", id, tradeNo, payMoney, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("支付宝 创建充值订单失败 user_id=%d trade_no=%s units=%d money=%.2f error=%q", id, tradeNo, req.Amount, payMoney, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
@@ -139,19 +153,18 @@ func RequestAlipayPay(c *gin.Context) {
 	useWap := isMobileUA(c.Request.UserAgent()) && payMoney < setting.AlipayForcePcAmount
 
 	var payUrl string
-	var err error
 	if useWap {
 		payUrl, err = client.WapPayURL(pay)
 	} else {
 		payUrl, err = client.PagePayURL(pay)
 	}
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("支付宝 拉起支付失败 user_id=%d trade_no=%s amount=%.2f wap=%t error=%q", id, tradeNo, payMoney, useWap, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("支付宝 拉起支付失败 user_id=%d trade_no=%s units=%d money=%.2f wap=%t error=%q", id, tradeNo, req.Amount, payMoney, useWap, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}
 
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("支付宝 充值订单创建成功 user_id=%d trade_no=%s amount=%.2f wap=%t", id, tradeNo, payMoney, useWap))
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("支付宝 充值订单创建成功 user_id=%d trade_no=%s units=%d money=%.2f wap=%t", id, tradeNo, req.Amount, payMoney, useWap))
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data":    gin.H{"pay_url": payUrl, "trade_no": tradeNo},
@@ -159,7 +172,7 @@ func RequestAlipayPay(c *gin.Context) {
 	})
 }
 
-// alipayMaxTopUp 单笔充值金额上限（人民币元），防止异常大额与配额溢出。
+// alipayMaxTopUp 单笔实付金额上限（人民币元），防止异常大额与配额溢出。
 const alipayMaxTopUp = 100000.0
 
 // AlipayNotify 处理支付宝异步支付结果通知。

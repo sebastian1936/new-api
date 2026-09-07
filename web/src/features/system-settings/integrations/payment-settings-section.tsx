@@ -1426,7 +1426,7 @@ export function PaymentSettingsSection({
                     name='AlipayMinTopUp'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Minimum top-up (CNY)')}</FormLabel>
+                        <FormLabel>{t('Minimum top-up quantity')}</FormLabel>
                         <FormControl>
                           <Input
                             type='number'
@@ -1436,7 +1436,9 @@ export function PaymentSettingsSection({
                           />
                         </FormControl>
                         <FormDescription>
-                          {t('Smallest CNY amount users can recharge')}
+                          {t(
+                            'Smallest number of balance units users can recharge. The CNY charge is this value multiplied by the unit price.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

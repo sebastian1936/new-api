@@ -96,7 +96,7 @@ export interface CreemPaymentRequest {
  * Alipay payment request parameters
  */
 export interface AlipayPaymentRequest {
-  /** Topup amount in CNY (1 CNY = 1 balance unit) */
+  /** Number of balance units to buy (integers only) */
   amount: number
   /** Payment method identifier */
   payment_method: 'alipay'
@@ -158,7 +158,7 @@ export interface TopupInfo {
   creem_products?: CreemProduct[]
   /** Whether Alipay direct topup is enabled */
   enable_alipay_topup?: boolean
-  /** Minimum topup amount (CNY) for Alipay */
+  /** Minimum number of balance units per Alipay order */
   alipay_min_topup?: number
   /** Whether Waffo topup is enabled */
   enable_waffo_topup?: boolean

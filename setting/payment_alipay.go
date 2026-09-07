@@ -11,7 +11,7 @@ var (
 	AlipayPublicKey = ""
 	// AlipaySandbox 是否使用沙箱网关。
 	AlipaySandbox = false
-	// AlipayMinTopUp 最低充值金额（人民币元，1 元 = 1 余额单位）。
+	// AlipayMinTopUp 单笔最低充值数量（余额单位，实付人民币 = 数量 × 单位价格）。
 	AlipayMinTopUp = 1
 	// AlipayForcePcAmount 达到该金额（含）强制走电脑网站支付，忽略移动端 UA。
 	AlipayForcePcAmount = 50.0

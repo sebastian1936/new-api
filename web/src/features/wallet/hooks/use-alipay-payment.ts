@@ -24,14 +24,17 @@ import { requestAlipayPayment, isApiSuccess } from '../api'
 
 /**
  * Hook for handling Alipay direct payment.
+ * The amount is the number of balance units (integers only); the backend
+ * converts it to the CNY charge with the configured unit price.
  * The backend decides PC (page.pay) vs H5 (wap.pay) by User-Agent,
- * forcing PC when amount >= configured threshold.
+ * forcing PC when the charge reaches the configured threshold.
  */
 export function useAlipayPayment() {
   const [processing, setProcessing] = useState(false)
 
   const processAlipayPayment = useCallback(async (amount: number) => {
-    if (!amount || amount <= 0) {
+    const units = Math.floor(amount)
+    if (!units || units <= 0) {
       toast.error(i18next.t('Please enter a valid amount'))
       return false
     }
@@ -39,7 +42,7 @@ export function useAlipayPayment() {
     setProcessing(true)
     try {
       const response = await requestAlipayPayment({
-        amount,
+        amount: units,
         payment_method: 'alipay',
       })
 

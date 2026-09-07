@@ -235,9 +235,9 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Handle Alipay direct payment (1 CNY = 1 balance unit).
-  // Amount is taken directly from the topup input in CNY; the backend
-  // picks PC vs H5 by User-Agent, forcing PC when amount reaches threshold.
+  // Handle Alipay direct payment. The input value is the number of balance
+  // units; the backend converts it to the CNY charge with the shared unit
+  // price, then picks PC vs H5 by User-Agent.
   // The cashier opens in a new tab (see use-alipay-payment); on this original
   // page we then prompt the user to confirm completion and refresh balance.
   const handleAlipayPay = async () => {

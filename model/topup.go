@@ -467,8 +467,8 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 }
 
 // RechargeAlipay 完成支付宝订单充值。
-// 换算规则：1 元人民币 = 1 余额单位 = QuotaPerUnit 配额（严格 1:1），
-// 即 quota = topUp.Money(人民币元) * QuotaPerUnit。
+// 换算规则：quota = topUp.Amount(充值数量/余额单位) * QuotaPerUnit，
+// topUp.Money 为下单时按定价配置算出的实付人民币金额，仅用于校验与展示。
 func RechargeAlipay(tradeNo string, callerIp string) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
@@ -495,11 +495,11 @@ func RechargeAlipay(tradeNo string, callerIp string) (err error) {
 			return errors.New("充值订单状态错误")
 		}
 
-		// 1 元 = 1 余额单位 = QuotaPerUnit 配额。
+		// 1 充值单位 = QuotaPerUnit 配额，实付金额不参与配额计算。
 		// 使用集中式配额转换（含饱和保护），禁止裸 IntPart() 转换。
-		dMoney := decimal.NewFromFloat(topUp.Money)
+		dAmount := decimal.NewFromInt(topUp.Amount)
 		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		quotaToAdd = int64(common.QuotaFromDecimal(dMoney.Mul(dQuotaPerUnit)))
+		quotaToAdd = int64(common.QuotaFromDecimal(dAmount.Mul(dQuotaPerUnit)))
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}
