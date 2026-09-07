@@ -28,6 +28,7 @@ import { RECHARGE_SOURCE_BADGE } from '../constants'
 import {
   getPaymentMethodLabel,
   getQuotaAdjustAmount,
+  getQuotaAdjustTargetUserId,
   parseRechargeOther,
   resolveRechargeSource,
 } from '../lib/utils'
@@ -77,18 +78,35 @@ export function useRechargeRecordsColumns(): ColumnDef<RechargeRecord>[] {
     },
     {
       accessorKey: 'username',
-      header: t('Username'),
+      header: t('User'),
       meta: { mobileTitle: true },
       cell: ({ row }) => {
+        const record = row.original
         const username = row.getValue('username') as string
+        const operator = username || t('User {{id}}', { id: record.user_id })
+        // Admin adjustment logs are owned by the operator, so show the target
+        // user (who actually received the quota) as the primary identity and
+        // keep the operator visible as secondary context. The backend resolves
+        // the target username; fall back to its ID if the user was deleted.
+        const targetUserId = getQuotaAdjustTargetUserId(
+          parseRechargeOther(record.other)
+        )
+        if (targetUserId == null) {
+          return <span className='font-medium'>{operator}</span>
+        }
+        const target =
+          record.target_username || t('User {{id}}', { id: targetUserId })
         return (
-          <span className='font-medium'>
-            {username || t('User {{id}}', { id: row.original.user_id })}
-          </span>
+          <div className='flex flex-col gap-0.5'>
+            <span className='font-medium'>{target}</span>
+            <span className='text-muted-foreground text-xs'>
+              {t('by {{operator}}', { operator })}
+            </span>
+          </div>
         )
       },
       enableSorting: false,
-      size: 160,
+      size: 180,
     },
     {
       accessorKey: 'quota',

@@ -117,3 +117,23 @@ export function getQuotaAdjustAmount(
   const sign = action === 'user.quota_subtract' ? '-' : '+'
   return `${sign}${String(quota)}`
 }
+
+/**
+ * Resolve the user whose quota an admin adjustment actually changed.
+ *
+ * Admin audit logs are owned by the *operator* (the admin), so the record's
+ * `username` / `user_id` identify who performed the action, not who received
+ * the quota. The target is stored as `other.op.params.target_user_id` by
+ * `recordManageAuditFor`, which omits it when operator and target are the same
+ * user (an admin adjusting their own quota).
+ *
+ * Returns null when the record has no distinct target.
+ */
+export function getQuotaAdjustTargetUserId(
+  other: LogOtherData | null
+): number | null {
+  const raw = other?.op?.params?.target_user_id
+  if (raw == null) return null
+  const id = Number(raw)
+  return Number.isFinite(id) && id > 0 ? id : null
+}

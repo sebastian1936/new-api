@@ -42,6 +42,12 @@ export interface RechargeRecord {
   quota: number
   created_at: number
   other: string
+  /**
+   * Username of the user whose quota an admin adjustment changed. Filled in by
+   * the backend for admin adjustment records only, because those logs are owned
+   * by the operator while the target user is stored as an ID inside `other`.
+   */
+  target_username?: string
 }
 
 export interface GetRechargeRecordsParams {

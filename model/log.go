@@ -78,6 +78,10 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+	// TargetUsername 仅在充值记录查询中运行时填充，不落库、不参与 AutoMigrate。
+	// 管理员额度调整日志归属操作者，被调整的目标用户仅以 ID 存于 Other.op.params
+	// .target_user_id；这里补上其用户名，便于前端直接展示"给谁加的额度"。
+	TargetUsername string `json:"target_username,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value
@@ -585,7 +589,73 @@ func GetRechargeRecords(source RechargeSource, username string, startTimestamp i
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
 	}
+	fillRechargeTargetUsernames(logs)
 	return logs, total, err
+}
+
+// fillRechargeTargetUsernames 为管理员额度调整日志补上目标用户名。
+// 这类日志归属操作者（管理员），被调整的用户仅以 ID 存于
+// Other.op.params.target_user_id，前端无法直接显示"给谁加的额度"。
+// 按去重后的 ID 批量查询用户名，避免逐行查询产生 N+1。
+func fillRechargeTargetUsernames(logs []*Log) {
+	targetIdByLog := make(map[int]int, len(logs))
+	targetIds := types.NewSet[int]()
+	for i, log := range logs {
+		if log.Type != LogTypeManage || log.Other == "" {
+			continue
+		}
+		otherMap, err := common.StrToMap(log.Other)
+		if err != nil || otherMap == nil {
+			continue
+		}
+		op, ok := otherMap["op"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		params, ok := op["params"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		// JSON 数字反序列化为 float64；兼容其他数值形态。
+		var targetId int
+		switch v := params["target_user_id"].(type) {
+		case float64:
+			targetId = int(v)
+		case int:
+			targetId = v
+		case int64:
+			targetId = int(v)
+		default:
+			continue
+		}
+		if targetId <= 0 {
+			continue
+		}
+		targetIdByLog[i] = targetId
+		targetIds.Add(targetId)
+	}
+
+	if targetIds.Len() == 0 {
+		return
+	}
+
+	var users []struct {
+		Id       int    `gorm:"column:id"`
+		Username string `gorm:"column:username"`
+	}
+	if err := DB.Table("users").Select("id, username").Where("id IN ?", targetIds.Items()).Find(&users).Error; err != nil {
+		common.SysError("failed to load recharge target usernames: " + err.Error())
+		return
+	}
+	usernameById := make(map[int]string, len(users))
+	for _, user := range users {
+		usernameById[user.Id] = user.Username
+	}
+	for i, targetId := range targetIdByLog {
+		if name, ok := usernameById[targetId]; ok {
+			logs[i].TargetUsername = name
+		}
+	}
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
