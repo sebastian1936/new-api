@@ -40,6 +40,16 @@ export interface RegisterPayload {
   verification_code?: string
   aff_code?: string
   turnstile?: string
+  /** Graphical captcha id issued by GET /api/captcha */
+  captcha_id?: string
+  /** Digits the user read from the captcha image */
+  captcha_code?: string
+}
+
+/** Payload of GET /api/captcha */
+export interface CaptchaData {
+  captcha_id: string
+  captcha_img: string
 }
 
 export interface PasswordResetPayload {
@@ -118,6 +128,7 @@ export interface SystemStatus {
     WeChatAccountQRCodeImageURL?: string
     turnstile_check?: boolean
     turnstile_site_key?: string
+    captcha_enabled?: boolean
     email_verification?: boolean
     self_use_mode_enabled?: boolean
     display_in_currency?: boolean
@@ -163,6 +174,7 @@ export interface SystemStatus {
   WeChatAccountQRCodeImageURL?: string
   turnstile_check?: boolean
   turnstile_site_key?: string
+  captcha_enabled?: boolean
   email_verification?: boolean
   self_use_mode_enabled?: boolean
   display_in_currency?: boolean

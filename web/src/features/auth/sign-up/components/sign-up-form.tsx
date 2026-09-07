@@ -39,10 +39,12 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { register, wechatLoginByCode } from '@/features/auth/api'
+import { CaptchaField } from '@/features/auth/components/captcha-field'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
+import { useCaptcha } from '@/features/auth/hooks/use-captcha'
 import { useEmailVerification } from '@/features/auth/hooks/use-email-verification'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import {
@@ -77,6 +79,15 @@ export function SignUpForm({
     validateTurnstile,
   } = useTurnstile()
   const { redirectToLogin, handleLoginSuccess } = useAuthRedirect()
+  const {
+    isCaptchaEnabled,
+    captchaId,
+    captchaImage,
+    captchaCode,
+    setCaptchaCode,
+    isLoadingCaptcha,
+    refreshCaptcha,
+  } = useCaptcha()
   const {
     isSending: isSendingCode,
     secondsLeft,
@@ -156,6 +167,11 @@ export function SignUpForm({
       }
     }
 
+    if (isCaptchaEnabled && !captchaCode) {
+      toast.error(t('Please enter the captcha'))
+      return
+    }
+
     if (!validateTurnstile()) return
 
     setIsLoading(true)
@@ -167,6 +183,8 @@ export function SignUpForm({
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
         turnstile: turnstileToken,
+        captcha_id: isCaptchaEnabled ? captchaId : undefined,
+        captcha_code: isCaptchaEnabled ? captchaCode : undefined,
       })
 
       if (res?.success) {
@@ -174,9 +192,17 @@ export function SignUpForm({
         redirectToLogin()
       } else {
         toast.error(res?.message || t('Failed to create account'))
+        // The server consumes the captcha on every verification attempt, so a
+        // failed submit always needs a fresh image before the next try.
+        if (isCaptchaEnabled) {
+          void refreshCaptcha()
+        }
       }
     } catch {
       // Errors are handled by global interceptor
+      if (isCaptchaEnabled) {
+        void refreshCaptcha()
+      }
     } finally {
       setIsLoading(false)
     }
@@ -346,6 +372,18 @@ export function SignUpForm({
           </>
         )}
 
+        {/* Graphical captcha */}
+        {isCaptchaEnabled && (
+          <CaptchaField
+            value={captchaCode}
+            onChange={setCaptchaCode}
+            imageDataUrl={captchaImage}
+            isLoading={isLoadingCaptcha}
+            onRefresh={refreshCaptcha}
+            disabled={isLoading}
+          />
+        )}
+
         {/* Turnstile */}
         {isTurnstileEnabled && (
           <div className='mt-2'>
@@ -371,7 +409,8 @@ export function SignUpForm({
           disabled={
             isLoading ||
             (requiresLegalConsent && !agreedToLegal) ||
-            !turnstileReady
+            !turnstileReady ||
+            (isCaptchaEnabled && !captchaCode)
           }
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}

@@ -164,6 +164,14 @@ func GlobalWebRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+// CaptchaRateLimit 限制单 IP 获取图形验证码的频率。
+// 验证码生成涉及随机数与图片编码，属于可被滥用的计算型接口，因此即使它本身
+// 是防刷手段也需要自我保护。阈值放得比 CriticalRateLimit 宽松，以容忍用户
+// 正常的多次刷新，同时挡住高频批量拉取。
+func CaptchaRateLimit() func(c *gin.Context) {
+	return rateLimitFactory(common.CaptchaRateLimitNum, common.CaptchaRateLimitDuration, "CAP")
+}
+
 func GlobalAPIRateLimit() func(c *gin.Context) {
 	if common.GlobalApiRateLimitEnable {
 		return rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")

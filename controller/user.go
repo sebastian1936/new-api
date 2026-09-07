@@ -224,6 +224,15 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	// 图形验证码校验前置于后续所有处理（含数据库查询与邮箱校验），
+	// 使脚本在通过验证码前无法触达任何数据库操作。
+	// VerifyCaptcha 内部为一次性校验：无论成败都立即失效该验证码。
+	if common.CaptchaEnabled {
+		if !common.VerifyCaptcha(user.CaptchaId, user.CaptchaCode) {
+			common.ApiErrorMsg(c, "验证码错误或已过期")
+			return
+		}
+	}
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return

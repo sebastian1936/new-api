@@ -208,6 +208,11 @@ var (
 	CriticalRateLimitNum            = 20
 	CriticalRateLimitDuration int64 = 20 * 60
 
+	// 图形验证码获取频率：默认单 IP 每 10 分钟 60 次。
+	// 允许用户反复刷新验证码，同时为计算型接口保留上限。
+	CaptchaRateLimitNum            = 60
+	CaptchaRateLimitDuration int64 = 10 * 60
+
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60
 

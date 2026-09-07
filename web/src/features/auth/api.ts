@@ -29,6 +29,7 @@ import type {
   Login2FAResponse,
   TwoFAPayload,
   RegisterPayload,
+  CaptchaData,
   ApiResponse,
 } from './types'
 
@@ -185,6 +186,13 @@ export async function register(payload: RegisterPayload): Promise<ApiResponse> {
   const res = await api.post(`/api/user/register`, payload, {
     params: { turnstile: payload.turnstile ?? '' },
   })
+  return res.data
+}
+
+// Fetch a fresh graphical captcha (id + PNG data URL).
+// The answer never leaves the server; only the id is echoed back on register.
+export async function getCaptcha(): Promise<ApiResponse<CaptchaData>> {
+  const res = await api.get('/api/captcha', { skipErrorHandler: true })
   return res.data
 }
 

@@ -72,6 +72,7 @@ func GetStatus(c *gin.Context) {
 		"server_address":              system_setting.ServerAddress,
 		"turnstile_check":             common.TurnstileCheckEnabled,
 		"turnstile_site_key":          common.TurnstileSiteKey,
+		"captcha_enabled":             common.CaptchaEnabled,
 		"docs_link":                   operation_setting.GetGeneralSetting().DocsLink,
 		"quota_per_unit":              common.QuotaPerUnit,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type
@@ -232,6 +233,26 @@ func GetHomePageContent(c *gin.Context) {
 		"data":    common.OptionMap["HomePageContent"],
 	})
 	return
+}
+
+// GetCaptcha 下发一张注册用数字图形验证码。
+// 答案仅保存在服务端（Redis，未启用时退回内存），响应只返回验证码 ID 与图片，
+// 由客户端在注册时回传 ID + 用户填写的数字进行校验。
+func GetCaptcha(c *gin.Context) {
+	if !common.CaptchaEnabled {
+		common.ApiErrorMsg(c, "验证码功能未启用")
+		return
+	}
+	id, dataURL, err := common.GenerateCaptcha()
+	if err != nil {
+		common.SysError("failed to generate captcha: " + err.Error())
+		common.ApiErrorMsg(c, "验证码生成失败")
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"captcha_id":  id,
+		"captcha_img": dataURL,
+	})
 }
 
 func SendEmailVerification(c *gin.Context) {
