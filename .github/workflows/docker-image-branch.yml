@@ -3,7 +3,8 @@ name: Publish Docker image (Tencent CCR)
 on:
   push:
     branches:
-      - feature/based-on-rc24
+      - '*'
+      - '**'
   workflow_dispatch:
     inputs:
       branch:
