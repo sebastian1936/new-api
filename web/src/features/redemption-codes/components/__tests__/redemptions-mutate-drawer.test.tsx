@@ -23,7 +23,7 @@ import {
   waitFor,
   type RenderResult,
 } from '@testing-library/react'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { Redemption } from '../../types'
 
@@ -52,6 +52,7 @@ await i18n.use(initReactI18next).init({
 type ApiMethod = (url: string, data?: unknown) => Promise<{ data: unknown }>
 type MockableApi = {
   get: ApiMethod
+  post: ApiMethod
   put: ApiMethod
 }
 type RenderedDrawer = {
@@ -64,6 +65,7 @@ type CurrencyFixture = {
 
 const apiClient = api as unknown as MockableApi
 const originalGet = apiClient.get
+const originalPost = apiClient.post
 const originalPut = apiClient.put
 const originalConsoleLog = Reflect.get(console, 'log')
 let renderedDrawer: RenderedDrawer | null = null
@@ -93,7 +95,7 @@ function deferred<T>() {
   return { promise, reject, resolve }
 }
 
-function drawerTree(currentRow: Redemption) {
+function drawerTree(currentRow?: Redemption) {
   return (
     <I18nextProvider i18n={i18n}>
       <RedemptionsProvider>
@@ -134,6 +136,21 @@ async function rerenderDrawer(currentRow: Redemption): Promise<void> {
     throw new Error('Expected a rendered redemption drawer')
   }
   renderedDrawer.result.rerender(drawerTree(currentRow))
+}
+
+function renderCreateDrawer(): void {
+  useSystemConfigStore.getState().setConfig({
+    currency: {
+      displayInCurrency: true,
+      quotaDisplayType: 'USD',
+      quotaPerUnit: 500000,
+      usdExchangeRate: 1,
+      customCurrencySymbol: '¤',
+      customCurrencyExchangeRate: 1,
+    },
+  })
+
+  renderedDrawer = { result: render(drawerTree()) }
 }
 
 function getSaveButton(): HTMLButtonElement {
@@ -179,8 +196,13 @@ async function waitForLoadedForm(): Promise<void> {
 
 afterEach(() => {
   apiClient.get = originalGet
+  apiClient.post = originalPost
   apiClient.put = originalPut
   Reflect.set(console, 'log', originalConsoleLog)
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: undefined,
+  })
   toast.dismiss()
   localStorage.clear()
   renderedDrawer = null
@@ -310,5 +332,37 @@ describe('redemption drawer', () => {
 
     expect(updates[0]?.id).toBe(2)
     expect(updates[0]?.quota).toBe(1000001)
+  })
+
+  test('shows the created codes in a dialog and copies them all after a successful create', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const createdKeys = [
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      'bbbbbbbb-0000-4000-8000-000000000002',
+    ]
+    const payloads: Array<Record<string, unknown>> = []
+    apiClient.post = async (_url, data) => {
+      payloads.push(data as Record<string, unknown>)
+      return { data: { success: true, data: createdKeys } }
+    }
+
+    renderCreateDrawer()
+    await waitForLoadedForm()
+
+    submitForm()
+
+    expect(await screen.findByText(createdKeys[0])).toBeInTheDocument()
+    expect(screen.getByText(createdKeys[1])).toBeInTheDocument()
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0]?.count).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy All Codes' }))
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(createdKeys.join('\n'))
+    )
   })
 })

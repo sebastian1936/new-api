@@ -69,6 +69,7 @@ import {
   transformRedemptionToFormDefaults,
 } from '../lib'
 import type { Redemption } from '../types'
+import { RedemptionsCreatedDialog } from './redemptions-created-dialog'
 import { useRedemptions } from './redemptions-provider'
 
 type RedemptionsMutateDrawerProps = {
@@ -93,6 +94,7 @@ export function RedemptionsMutateDrawer({
   const [loadedRedemption, setLoadedRedemption] = useState<Redemption | null>(
     null
   )
+  const [createdKeys, setCreatedKeys] = useState<string[]>([])
 
   const form = useForm<RedemptionFormValues>({
     resolver: zodResolver(getRedemptionFormSchema(t)),
@@ -182,7 +184,8 @@ export function RedemptionsMutateDrawer({
         // Create mode
         const result = await createRedemption(basePayload)
         if (result.success) {
-          const count = result.data?.length || 0
+          const keys = result.data ?? []
+          const count = keys.length
           toast.success(
             count > 1
               ? t('Successfully created {{count}} redemption codes', {
@@ -192,6 +195,7 @@ export function RedemptionsMutateDrawer({
           )
           onOpenChange(false)
           triggerRefresh()
+          setCreatedKeys(keys)
         }
       }
     } finally {
@@ -422,6 +426,15 @@ export function RedemptionsMutateDrawer({
           </Button>
         </SheetFooter>
       </SheetContent>
+      <RedemptionsCreatedDialog
+        open={createdKeys.length > 0}
+        keys={createdKeys}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setCreatedKeys([])
+          }
+        }}
+      />
     </Sheet>
   )
 }
