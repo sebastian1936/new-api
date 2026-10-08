@@ -96,6 +96,7 @@ reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
 type ApiMethod = (url: string, data?: unknown) => Promise<{ data: unknown }>
 type MockableApi = {
   get: ApiMethod
+  post: ApiMethod
   put: ApiMethod
 }
 type RenderedDrawer = {
@@ -109,6 +110,7 @@ type CurrencyFixture = {
 
 const apiClient = api as unknown as MockableApi
 const originalGet = apiClient.get
+const originalPost = apiClient.post
 const originalPut = apiClient.put
 const originalConsoleLog = Reflect.get(console, 'log')
 let renderedDrawer: RenderedDrawer | null = null
@@ -138,7 +140,7 @@ function deferred<T>() {
   return { promise, reject, resolve }
 }
 
-function drawerTree(currentRow: Redemption) {
+function drawerTree(currentRow?: Redemption) {
   return (
     <I18nextProvider i18n={i18n}>
       <RedemptionsProvider>
@@ -154,7 +156,7 @@ function drawerTree(currentRow: Redemption) {
 }
 
 async function renderDrawer(
-  currentRow: Redemption,
+  currentRow?: Redemption,
   currency: CurrencyFixture = {
     quotaDisplayType: 'USD',
     usdExchangeRate: 1,
@@ -275,6 +277,7 @@ async function waitForLoadedForm(): Promise<void> {
 
 afterEach(async () => {
   apiClient.get = originalGet
+  apiClient.post = originalPost
   apiClient.put = originalPut
   Reflect.set(console, 'log', originalConsoleLog)
   toast.dismiss()
@@ -436,4 +439,56 @@ test('redemption drawer ignores an older response after switching records', asyn
 
   assert.equal(updates[0]?.id, 2)
   assert.equal(updates[0]?.quota, 1000001)
+})
+
+test('redemption drawer shows created codes in a dialog and copies them all', async () => {
+  const copiedTexts: string[] = []
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (text: string) => {
+        copiedTexts.push(text)
+      },
+    },
+  })
+  const createdKeys = [
+    'aaaaaaaa-0000-4000-8000-000000000001',
+    'bbbbbbbb-0000-4000-8000-000000000002',
+  ]
+  const payloads: Array<Record<string, unknown>> = []
+  apiClient.post = async (_url, data) => {
+    payloads.push(data as Record<string, unknown>)
+    return { data: { success: true, data: createdKeys } }
+  }
+
+  await renderDrawer()
+  await waitForLoadedForm()
+  await submitForm()
+
+  await act(async () =>
+    waitForCondition(
+      () =>
+        document.body.textContent?.includes(createdKeys[0]) === true &&
+        document.body.textContent?.includes(createdKeys[1]) === true,
+      'created codes dialog was not shown'
+    )
+  )
+  assert.equal(payloads.length, 1)
+  assert.equal(payloads[0]?.count, 1)
+
+  const copyAllButton = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.includes('Copy All Codes') === true
+  )
+  assert.ok(copyAllButton, 'copy-all button was not rendered')
+
+  await act(async () => {
+    copyAllButton.click()
+  })
+  await act(async () =>
+    waitForCondition(
+      () => copiedTexts.length === 1,
+      'copy-all action did not write to the clipboard'
+    )
+  )
+  assert.equal(copiedTexts[0], createdKeys.join('\n'))
 })
